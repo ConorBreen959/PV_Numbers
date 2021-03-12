@@ -1,0 +1,80 @@
+---
+title: "PV Numbers"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+knitr::opts_knit$set(root.dir = '~/Development/Covid')
+
+# List of required packages
+packages <- c("data.table", "tidyverse")
+
+# Check if packages are installed; install if not
+new.packages <- packages[!(packages %in% installed.packages()[,"Package"])]
+if(length(new.packages)) install.packages(new.packages)
+
+# Attach required packages
+library(data.table)
+library(tidyverse)
+```
+
+```{r}
+numbers <- function(path){
+  
+  setwd(path)
+  
+  files <- list.files(path = ".", pattern = ".txt")
+
+  # Check if any Altona .txt files were read in; perform the function on any that were
+  if(length(files) != 0){
+    
+    # Read the exported text files in the folder into a single dataframe with sep and NA preferences set
+    data <- as.data.frame(rbindlist(lapply(files, fread, sep="\t", na.strings = c("", "Undetermined"))))
+  }
+  
+  for (i in 1:length(data$Well)){
+    if(nchar(data[i,1]) == 2){
+      str_sub(data[i,1], 2, 1) <- "0"
+    }
+  }
+  
+  
+  data[,"Call"] <- NA
+  
+  colnames(data) <- c("Position", "Sample", "Channel", "Cp", "Call")
+  
+  
+  # Interpret result for each sample; algorithm parameters are set in the ifelse statement
+  data <- data %>%
+    
+    # Change dataframe from long to wide format so that each sample is on one row
+    spread(Channel, Cp) %>% select(Position, Sample, Call, FAM, VIC)
+  
+  # Replace NA samples with Empty
+  data$Sample <- data$Sample %>% replace_na("Empty")
+  
+  # Interpret results
+  data <- data %>% mutate(Call = ifelse(Sample == "Empty" & is.na(FAM) & is.na(VIC), "",
+                                 ifelse(Sample == "PTC" & is.na(FAM), "PTC Fail", 
+                                 ifelse(Sample == "PTC" & FAM > 0, "PTC Pass", 
+                                 ifelse(Sample == "NEC" & is.na(FAM) & is.na(VIC), "NEC Fail", 
+                                 ifelse(Sample == "NEC" & is.na(FAM) & VIC > 0, "NEC Pass",
+                                 ifelse(Sample == "NEC" & FAM > 0, "NEC Fail",
+                                 ifelse(Sample == "IEC" & is.na(FAM) & is.na(VIC), "IEC Fail",
+                                 ifelse(Sample == "IEC" & is.na(FAM) & VIC > 0, "IEC Pass",
+                                 ifelse(Sample == "IEC" & FAM > 0, "IEC Fail", 
+                                 ifelse(str_detect(Sample, "_") & is.na(FAM) & is.na(VIC), "IEC Fail",
+                                 ifelse(str_detect(Sample, "_") & is.na(FAM) & VIC > 0, "Not Detected",        
+                                 ifelse(str_detect(Sample, "_") & FAM > 0 & VIC > 0, "Detected", 
+                                 ifelse(Sample == "Empty" & FAM > 0 | VIC > 0, "Empty Well has CT!", NA))))))))))))))
+  
+  write.csv(data, paste0(path, ".csv"))
+  
+}
+```
+
+```{r, warning=FALSE}
+numbers('20210309_COVID5')
+```
+
